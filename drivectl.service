@@ -1,0 +1,20 @@
+[Unit]
+Description=drivectl - HPE iLO drive power control web UI
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/drivectl
+ExecStart=/usr/bin/python3 -m drivectl --config /opt/drivectl/config.yaml
+Restart=on-failure
+RestartSec=3
+
+# Hardening (profile store contains plaintext BMC credentials)
+NoNewPrivileges=true
+ProtectSystem=full
+ReadWritePaths=/opt/drivectl/data
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

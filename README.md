@@ -72,6 +72,29 @@ committed, so end users never need a frontend build. If you change classes in
 ./frontend/build.sh    # downloads the standalone Tailwind CLI on first run
 ```
 
+## Running as a systemd service
+
+A unit file is included (`drivectl.service`). It assumes the repo lives at
+`/opt/drivectl` and a `config.yaml` exists there:
+
+```bash
+sudo cp drivectl.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now drivectl
+```
+
+Useful commands:
+
+```bash
+systemctl status drivectl        # is it running?
+journalctl -u drivectl -f        # follow logs
+sudo systemctl restart drivectl  # after config changes
+```
+
+The service starts at boot, restarts automatically on failure, and binds to
+`0.0.0.0:8722` by default, so the UI is reachable from other machines at
+`http://<server-ip>:8722`.
+
 ## Docker (optional)
 
 ```bash
