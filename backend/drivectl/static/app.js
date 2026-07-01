@@ -17,6 +17,9 @@ const state = {
   drawerKey: null,
   protectedOpen: false,
   settings: loadSettings(),
+  selectedDriveIds: new Set(), // driveKey(d) of multi-selected drives
+  bulkRunning: false,
+  bulkProgress: null,      // { action, done, total } while a bulk action runs
 };
 
 const FILTERS = [
@@ -186,6 +189,7 @@ function show(id, visible) { $(id).classList.toggle("hidden", !visible); }
 async function selectServer(profileId) {
   state.selectedId = profileId;
   state.drawerKey = null;
+  state.selectedDriveIds.clear(); // selection is per-server
   closeDrawer();
   renderSidebar();
   const p = state.profiles.find((x) => x.id === profileId);
@@ -205,6 +209,7 @@ async function loadDrives({ silent = false } = {}) {
     show("drives-table-wrap", false);
     show("drives-error", false);
     show("drives-empty", false);
+    show("bulk-bar", false);
     show("protected-section", false);
     $("drive-summary").textContent = "";
   }
@@ -252,9 +257,98 @@ function visibleDrives() {
   return base.filter((d) => matchesSearch(d, q));
 }
 
+// -------------------------------------------------------------- selection ----
+function isDriveSelectable(d) {
+  if (d.role === "protected") return false; // never bulk-select protected drives
+  if (d.role === "unknown" && !state.settings.allowUnknown) return false;
+  return powerOf(d) !== "unknown"; // mirrors the single-drive action ("Refresh required")
+}
+
+function selectedDrives() {
+  return state.drives.filter((d) => state.selectedDriveIds.has(driveKey(d)));
+}
+
+function visibleSelectableDrives() {
+  return visibleDrives().filter(isDriveSelectable);
+}
+
+function toggleDriveSelection(id) {
+  if (state.bulkRunning) return;
+  if (state.selectedDriveIds.has(id)) state.selectedDriveIds.delete(id);
+  else state.selectedDriveIds.add(id);
+  renderTable();
+}
+
+function toggleSelectAllVisible() {
+  if (state.bulkRunning) return;
+  const vis = visibleSelectableDrives();
+  const allSelected = vis.length > 0 && vis.every((d) => state.selectedDriveIds.has(driveKey(d)));
+  for (const d of vis) {
+    if (allSelected) state.selectedDriveIds.delete(driveKey(d));
+    else state.selectedDriveIds.add(driveKey(d));
+  }
+  renderTable();
+}
+
+function clearSelection() {
+  if (state.bulkRunning) return;
+  state.selectedDriveIds.clear();
+  renderTable();
+}
+
+// Drop selected ids that disappeared or are no longer selectable (e.g. after refresh).
+function pruneSelection() {
+  if (state.bulkRunning) return; // drives can report transient states mid-action
+  const valid = new Set(state.drives.filter(isDriveSelectable).map(driveKey));
+  for (const id of [...state.selectedDriveIds]) {
+    if (!valid.has(id)) state.selectedDriveIds.delete(id);
+  }
+}
+
+function renderBulkBar() {
+  const sel = selectedDrives();
+  show("bulk-bar", sel.length > 0);
+  if (sel.length === 0) return;
+
+  const visibleSelected = visibleDrives()
+    .filter((d) => state.selectedDriveIds.has(driveKey(d))).length;
+  let text = `${sel.length} drive${sel.length === 1 ? "" : "s"} selected`;
+  if (visibleSelected < sel.length) {
+    text += ` · ${visibleSelected} visible with current filters`;
+  }
+  $("bulk-count").textContent = text;
+
+  const prog = $("bulk-progress");
+  if (state.bulkProgress) {
+    const { action, done, total } = state.bulkProgress;
+    prog.innerHTML = `<span class="inline-flex items-center gap-2">
+      <span class="inline-block h-3.5 w-3.5 rounded-full border-2 border-zinc-600 border-t-indigo-400 animate-spin"></span>
+      Powering ${action === "on" ? "on" : "off"} ${done} of ${total}…</span>`;
+  } else {
+    prog.innerHTML = "";
+  }
+
+  const anyOff = sel.some((d) => powerOf(d) === "off");
+  const anyOn = sel.some((d) => powerOf(d) === "on");
+  $("bulk-on-btn").disabled = state.bulkRunning || !anyOff;
+  $("bulk-off-btn").disabled = state.bulkRunning || !anyOn;
+  $("bulk-clear-btn").disabled = state.bulkRunning;
+}
+
+function updateSelectAllCheckbox() {
+  const cb = $("select-all-cb");
+  const vis = visibleSelectableDrives();
+  const selectedVisible = vis.filter((d) => state.selectedDriveIds.has(driveKey(d))).length;
+  cb.disabled = state.bulkRunning || vis.length === 0;
+  cb.checked = vis.length > 0 && selectedVisible === vis.length;
+  cb.indeterminate = selectedVisible > 0 && selectedVisible < vis.length;
+}
+
 function renderMain() {
   show("drives-loading", false);
   show("drives-error", false);
+
+  pruneSelection();
 
   const protectedDrives = state.drives.filter((d) => d.role === "protected");
   const testDrives = state.drives.filter((d) => d.role !== "protected");
@@ -310,12 +404,30 @@ function actionCell(d) {
     class="rounded-lg px-3 py-1.5 text-xs font-medium border border-emerald-700/70 text-emerald-300 hover:bg-emerald-950/40 transition">Power on</button>`;
 }
 
+function selectCell(d) {
+  const key = driveKey(d);
+  if (!isDriveSelectable(d)) {
+    const reason = d.role === "protected" ? "Protected drives cannot be bulk-selected"
+      : d.role === "unknown" ? "Unknown drives cannot be bulk-selected (see Settings)"
+      : "Power state unknown — refresh required";
+    return `<td class="w-10 px-3 py-2.5">
+      <input type="checkbox" disabled class="accent-indigo-500 align-middle opacity-40 cursor-not-allowed" title="${esc(reason)}">
+    </td>`;
+  }
+  return `<td class="w-10 px-3 py-2.5">
+    <input type="checkbox" data-select="${esc(key)}" ${state.selectedDriveIds.has(key) ? "checked" : ""}
+      ${state.bulkRunning ? "disabled" : ""}
+      class="accent-indigo-500 align-middle cursor-pointer disabled:cursor-not-allowed" title="Select drive">
+  </td>`;
+}
+
 function driveRowHtml(d, { subdued = false } = {}) {
   const fav = d.meta && d.meta.favorite ? `<span class="text-amber-400" title="Favorite">&#9733;</span> ` : "";
   const roleNote = d.role !== "test"
     ? `<span class="block text-[11px] ${d.role === "protected" ? "text-amber-600/80" : "text-zinc-600"}">${esc(d.role_reason || d.role)}</span>`
     : "";
   return `
+    ${selectCell(d)}
     <td class="px-3 py-2.5">
       <div class="font-medium ${subdued ? "text-zinc-400" : ""}">${fav}${esc(d.name || d.drive_id)}</div>
       <div class="text-xs text-zinc-500 font-mono">${esc(d.storage_id)} / ${esc(d.drive_id)}</div>
@@ -336,16 +448,21 @@ function driveRowHtml(d, { subdued = false } = {}) {
 function bindRow(tr, d) {
   tr.className = "hover:bg-zinc-900/50 transition cursor-pointer";
   tr.addEventListener("click", (e) => {
-    if (e.target.closest("button")) return; // buttons handle themselves
+    if (e.target.closest("button, input")) return; // buttons/checkboxes handle themselves
     openDrawer(d);
   });
   tr.querySelectorAll("button[data-act]").forEach((btn) => {
     btn.addEventListener("click", () => requestPower(d, btn.dataset.act));
   });
+  tr.querySelectorAll("input[data-select]").forEach((cb) => {
+    cb.addEventListener("change", () => toggleDriveSelection(cb.dataset.select));
+  });
 }
 
 function renderTable() {
   const drives = visibleDrives();
+  renderBulkBar();
+  updateSelectAllCheckbox();
   const empty = $("drives-empty");
   if (drives.length === 0) {
     empty.textContent = state.search
@@ -542,6 +659,61 @@ function powerOnAll() {
             succeeded === targets.length ? "success" : "error");
     },
   });
+}
+
+// ------------------------------------------------------- bulk selection ----
+function bulkPower(action) {
+  if (state.bulkRunning) return;
+  // Only send the action to drives that actually need the state change.
+  const wantedCurrent = action === "on" ? "off" : "on";
+  const targets = selectedDrives().filter(
+    (d) => isDriveSelectable(d) && powerOf(d) === wantedCurrent);
+  if (targets.length === 0) {
+    toast(`No selected drives need to be powered ${action}.`, "info");
+    return;
+  }
+  if (action === "off") {
+    openConfirm({
+      title: "Power off selected drives?",
+      bodyHtml: `This will power off ${targets.length} selected test drive${targets.length === 1 ? "" : "s"}. Protected drives will not be affected.`,
+      okLabel: "Power off drives",
+      okClass: "bg-red-600 hover:bg-red-500",
+      onOk: () => { closeConfirm(); runBulkPower(action, targets); },
+    });
+    return;
+  }
+  runBulkPower(action, targets);
+}
+
+async function runBulkPower(action, targets) {
+  state.bulkRunning = true;
+  const failed = [];
+  let succeeded = 0;
+  try {
+    for (let i = 0; i < targets.length; i++) {
+      const d = targets[i];
+      state.bulkProgress = { action, done: i + 1, total: targets.length };
+      renderMain(); // doPower re-renders too; this keeps the progress text current
+      const success = await doPower(d, action, { quiet: true });
+      if (success) {
+        succeeded++;
+        state.selectedDriveIds.delete(driveKey(d)); // clear successful drives
+      } else {
+        failed.push(d); // keep failed drives selected for retry
+      }
+    }
+  } finally {
+    state.bulkProgress = null;
+    state.bulkRunning = false;
+  }
+  const verb = action === "on" ? "powered on" : "powered off";
+  if (failed.length === 0) {
+    toast(`${succeeded} drive${succeeded === 1 ? "" : "s"} ${verb}`, "success");
+  } else {
+    toast(`${succeeded} drive${succeeded === 1 ? "" : "s"} ${verb}, ${failed.length} failed`, "error", 9000);
+  }
+  await loadDrives({ silent: true }); // refresh drive state after the bulk action
+  renderMain();
 }
 
 // -------------------------------------------------------------- drawer ----
@@ -816,7 +988,7 @@ function setAutoRefresh(enabled) {
   }
   if (enabled) {
     state.autoRefreshTimer = setInterval(() => {
-      if (state.selectedId && state.pending.size === 0) {
+      if (state.selectedId && state.pending.size === 0 && !state.bulkRunning) {
         loadDrives({ silent: true });
       }
     }, 30000);
@@ -832,6 +1004,10 @@ document.addEventListener("DOMContentLoaded", async () => {
   $("delete-server-btn").addEventListener("click", deleteServer);
   $("refresh-btn").addEventListener("click", () => loadDrives());
   $("power-all-btn").addEventListener("click", powerOnAll);
+  $("select-all-cb").addEventListener("change", toggleSelectAllVisible);
+  $("bulk-on-btn").addEventListener("click", () => bulkPower("on"));
+  $("bulk-off-btn").addEventListener("click", () => bulkPower("off"));
+  $("bulk-clear-btn").addEventListener("click", clearSelection);
   $("server-form").addEventListener("submit", saveServer);
   $("modal-cancel").addEventListener("click", () => show("server-modal", false));
   $("test-btn").addEventListener("click", testFromModal);

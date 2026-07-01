@@ -88,10 +88,34 @@
 
         <div id="drives-empty" class="hidden rounded-xl border border-zinc-800 bg-zinc-900/40 text-zinc-400 px-4 py-8 text-sm text-center"></div>
 
+        <!-- Bulk selection action bar -->
+        <div id="bulk-bar" class="hidden mb-3 rounded-xl border border-indigo-500/40 bg-indigo-600/20 px-4 py-2.5 flex flex-wrap items-center gap-3">
+          <span id="bulk-count" class="text-sm font-medium text-indigo-200"></span>
+          <span id="bulk-progress" class="text-xs text-indigo-300"></span>
+          <div class="ml-auto flex items-center gap-2">
+            <button id="bulk-on-btn"
+              class="rounded-lg px-3 py-1.5 text-xs font-medium border border-emerald-700/70 text-emerald-300 hover:bg-emerald-950/40 transition disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent">
+              Power on selected
+            </button>
+            <button id="bulk-off-btn"
+              class="rounded-lg px-3 py-1.5 text-xs font-medium border border-amber-700/70 text-amber-300 hover:bg-amber-950/40 transition disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent">
+              Power off selected
+            </button>
+            <button id="bulk-clear-btn"
+              class="rounded-lg px-3 py-1.5 text-xs font-medium border border-zinc-700 text-zinc-300 hover:bg-zinc-800 transition disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent">
+              Clear selection
+            </button>
+          </div>
+        </div>
+
         <div id="drives-table-wrap" class="hidden rounded-xl border border-zinc-800 overflow-hidden">
           <table class="w-full text-sm">
             <thead class="bg-zinc-900/80 text-zinc-400 text-xs uppercase tracking-wider">
               <tr>
+                <th class="w-10 px-3 py-3">
+                  <input type="checkbox" id="select-all-cb" class="accent-indigo-500 align-middle cursor-pointer disabled:cursor-not-allowed"
+                    title="Select all visible drives">
+                </th>
                 <th class="text-left px-3 py-3 cursor-pointer select-none hover:text-zinc-200" data-sort="name">Drive</th>
                 <th class="text-left px-3 py-3 cursor-pointer select-none hover:text-zinc-200" data-sort="label">Label</th>
                 <th class="text-left px-3 py-3 cursor-pointer select-none hover:text-zinc-200" data-sort="model">Model</th>
