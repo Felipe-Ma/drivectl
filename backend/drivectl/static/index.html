@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>drivectl</title>
+  <link rel="stylesheet" href="/static/tailwind.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#128190;</text></svg>">
+</head>
+<body class="bg-zinc-950 text-zinc-100 min-h-screen antialiased">
+  <div class="flex h-screen overflow-hidden">
+
+    <!-- Sidebar -->
+    <aside class="w-72 shrink-0 border-r border-zinc-800 bg-zinc-900/60 flex flex-col">
+      <div class="px-4 py-4 border-b border-zinc-800 flex items-center gap-2">
+        <span class="text-xl">&#128190;</span>
+        <h1 class="text-lg font-semibold tracking-tight">drivectl</h1>
+        <span class="ml-auto text-[10px] uppercase tracking-widest text-zinc-500">HPE iLO</span>
+      </div>
+      <div id="server-list" class="flex-1 overflow-y-auto px-2 py-3 space-y-1"></div>
+      <div class="p-3 border-t border-zinc-800">
+        <button id="add-server-btn"
+          class="w-full rounded-lg bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 px-3 py-2 text-sm font-medium transition">
+          + Add server
+        </button>
+      </div>
+    </aside>
+
+    <!-- Main panel -->
+    <main class="flex-1 overflow-y-auto">
+      <div id="main-empty" class="h-full flex flex-col items-center justify-center text-zinc-500 gap-3">
+        <span class="text-5xl">&#128190;</span>
+        <p class="text-sm">Select a server on the left, or add one to get started.</p>
+      </div>
+
+      <div id="main-panel" class="hidden p-6 max-w-6xl mx-auto">
+        <div class="flex items-center gap-3 mb-1">
+          <h2 id="server-title" class="text-xl font-semibold"></h2>
+          <span id="server-ip" class="text-sm text-zinc-500 font-mono"></span>
+          <div class="ml-auto flex items-center gap-2">
+            <label class="flex items-center gap-1.5 text-xs text-zinc-400 select-none cursor-pointer mr-2">
+              <input type="checkbox" id="auto-refresh" class="accent-indigo-500">
+              Auto-refresh (30s)
+            </label>
+            <button id="refresh-btn"
+              class="rounded-lg border border-zinc-700 hover:bg-zinc-800 px-3 py-1.5 text-sm transition">
+              &#8635; Refresh
+            </button>
+            <button id="edit-server-btn"
+              class="rounded-lg border border-zinc-700 hover:bg-zinc-800 px-3 py-1.5 text-sm transition">
+              Edit
+            </button>
+            <button id="delete-server-btn"
+              class="rounded-lg border border-red-900/60 text-red-400 hover:bg-red-950/40 px-3 py-1.5 text-sm transition">
+              Delete
+            </button>
+          </div>
+        </div>
+        <p id="drive-count" class="text-sm text-zinc-500 mb-5"></p>
+
+        <div id="drives-loading" class="hidden flex items-center gap-3 text-zinc-400 py-12 justify-center">
+          <span class="inline-block h-5 w-5 rounded-full border-2 border-zinc-600 border-t-indigo-400 animate-spin"></span>
+          Discovering drives&hellip;
+        </div>
+
+        <div id="drives-error" class="hidden rounded-xl border border-red-900/60 bg-red-950/30 text-red-300 px-4 py-3 text-sm"></div>
+
+        <div id="drives-empty" class="hidden rounded-xl border border-zinc-800 bg-zinc-900/40 text-zinc-400 px-4 py-8 text-sm text-center">
+          No drives found on this server.
+        </div>
+
+        <div id="drives-table-wrap" class="hidden rounded-xl border border-zinc-800 overflow-hidden">
+          <table class="w-full text-sm">
+            <thead class="bg-zinc-900/80 text-zinc-400 text-xs uppercase tracking-wider">
+              <tr>
+                <th class="text-left px-4 py-3 cursor-pointer select-none hover:text-zinc-200" data-sort="name">Drive</th>
+                <th class="text-left px-4 py-3 cursor-pointer select-none hover:text-zinc-200" data-sort="model">Model</th>
+                <th class="text-right px-4 py-3 cursor-pointer select-none hover:text-zinc-200" data-sort="capacity_bytes">Capacity</th>
+                <th class="text-left px-4 py-3 cursor-pointer select-none hover:text-zinc-200" data-sort="media_type">Type</th>
+                <th class="text-left px-4 py-3 cursor-pointer select-none hover:text-zinc-200" data-sort="state">Status</th>
+                <th class="text-right px-4 py-3">Power</th>
+              </tr>
+            </thead>
+            <tbody id="drives-tbody" class="divide-y divide-zinc-800/80 bg-zinc-950/40"></tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Add/Edit server modal -->
+  <div id="server-modal" class="hidden fixed inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+    <div class="w-full max-w-md rounded-2xl border border-zinc-800 bg-zinc-900 shadow-2xl">
+      <div class="px-5 py-4 border-b border-zinc-800">
+        <h3 id="modal-title" class="font-semibold">Add server</h3>
+      </div>
+      <form id="server-form" class="px-5 py-4 space-y-4">
+        <div>
+          <label class="block text-xs text-zinc-400 mb-1" for="f-label">Label</label>
+          <input id="f-label" required placeholder="rack1-node3"
+            class="w-full rounded-lg bg-zinc-950 border border-zinc-700 focus:border-indigo-500 focus:outline-none px-3 py-2 text-sm">
+        </div>
+        <div>
+          <label class="block text-xs text-zinc-400 mb-1" for="f-ip">BMC IP / hostname</label>
+          <input id="f-ip" required placeholder="10.74.46.237"
+            class="w-full rounded-lg bg-zinc-950 border border-zinc-700 focus:border-indigo-500 focus:outline-none px-3 py-2 text-sm font-mono">
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs text-zinc-400 mb-1" for="f-user">Username</label>
+            <input id="f-user" required autocomplete="off"
+              class="w-full rounded-lg bg-zinc-950 border border-zinc-700 focus:border-indigo-500 focus:outline-none px-3 py-2 text-sm">
+          </div>
+          <div>
+            <label class="block text-xs text-zinc-400 mb-1" for="f-pass">Password</label>
+            <input id="f-pass" type="password" autocomplete="new-password"
+              class="w-full rounded-lg bg-zinc-950 border border-zinc-700 focus:border-indigo-500 focus:outline-none px-3 py-2 text-sm">
+          </div>
+        </div>
+        <label class="flex items-center gap-2 text-sm text-zinc-300 select-none cursor-pointer">
+          <input type="checkbox" id="f-verify" class="accent-indigo-500">
+          Verify TLS certificate
+          <span class="text-xs text-zinc-500">(off for self-signed iLO certs)</span>
+        </label>
+        <div id="test-result" class="hidden text-sm rounded-lg px-3 py-2"></div>
+        <div class="flex items-center gap-2 pt-1 pb-1">
+          <button type="button" id="test-btn"
+            class="rounded-lg border border-zinc-700 hover:bg-zinc-800 px-3 py-2 text-sm transition">
+            Test connection
+          </button>
+          <div class="ml-auto flex gap-2">
+            <button type="button" id="modal-cancel"
+              class="rounded-lg border border-zinc-700 hover:bg-zinc-800 px-3 py-2 text-sm transition">Cancel</button>
+            <button type="submit" id="modal-save"
+              class="rounded-lg bg-indigo-600 hover:bg-indigo-500 px-4 py-2 text-sm font-medium transition">Save</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Confirmation dialog -->
+  <div id="confirm-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+    <div class="w-full max-w-md rounded-2xl border border-amber-900/50 bg-zinc-900 shadow-2xl">
+      <div class="px-5 py-4 border-b border-zinc-800 flex items-center gap-2">
+        <span class="text-amber-400">&#9888;</span>
+        <h3 class="font-semibold" id="confirm-title">Confirm</h3>
+      </div>
+      <div class="px-5 py-4 text-sm text-zinc-300" id="confirm-body"></div>
+      <div class="px-5 py-4 flex justify-end gap-2 border-t border-zinc-800">
+        <button id="confirm-cancel"
+          class="rounded-lg border border-zinc-700 hover:bg-zinc-800 px-3 py-2 text-sm transition">Cancel</button>
+        <button id="confirm-ok"
+          class="rounded-lg bg-red-600 hover:bg-red-500 px-4 py-2 text-sm font-medium transition">Power off</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toasts -->
+  <div id="toasts" class="fixed bottom-4 right-4 z-50 space-y-2 w-96 max-w-[90vw]"></div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

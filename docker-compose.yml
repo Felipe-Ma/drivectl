@@ -1,0 +1,11 @@
+services:
+  drivectl:
+    build: .
+    ports:
+      - "${DRIVECTL_PORT:-8722}:8722"
+    volumes:
+      - ./data:/data
+    environment:
+      DRIVECTL_VERIFY_TLS: "false"
+      DRIVECTL_LOG_LEVEL: info
+    restart: unless-stopped

@@ -1,0 +1,4 @@
+@import "tailwindcss";
+
+@source "../backend/drivectl/static/index.html";
+@source "../backend/drivectl/static/app.js";

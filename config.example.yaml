@@ -1,0 +1,10 @@
+# drivectl configuration
+# Copy to config.yaml and adjust. Every key can also be set via environment
+# variables: DRIVECTL_HOST, DRIVECTL_PORT, DRIVECTL_DATA_DIR,
+# DRIVECTL_VERIFY_TLS, DRIVECTL_LOG_LEVEL.
+
+host: 0.0.0.0        # interface to bind
+port: 8722           # port to listen on
+data_dir: ./data     # where the profile store (profiles.json) lives
+verify_tls: false    # global default for new profiles (iLO certs are usually self-signed)
+log_level: info      # debug | info | warning | error
