@@ -115,8 +115,29 @@ The frontend uses a JSON API you can also script against (interactive docs at
 | POST | `/api/profiles` | Create `{label, bmc_ip, username, password, verify_tls}` |
 | PUT / DELETE | `/api/profiles/{id}` | Edit / remove a profile |
 | POST | `/api/profiles/{id}/test` | Test connection/auth to the iLO |
-| GET | `/api/profiles/{id}/drives` | Discover all drives (Systems → Storage → Drives) |
-| POST | `/api/profiles/{id}/drives/{storage_id}/{drive_id}/power` | `{"action":"on"\|"off"}` → `ForceOn`/`ForceOff`, re-polls state |
+| GET | `/api/profiles/{id}/drives` | Discover + classify all drives (`role`: test/protected/unknown) |
+| GET | `/api/profiles/{id}/drives/{storage_id}/{drive_id}` | Single-drive refresh (used for polling) |
+| POST | `/api/profiles/{id}/drives/{storage_id}/{drive_id}/power` | `{"action":"on"\|"off"}` → `ForceOn`/`ForceOff`; blocked for protected/unknown drives unless override flags are set |
+| GET / PUT | `/api/drive-meta` / `/api/drive-meta/{serial}` | Local labels/notes/favorite/role override, keyed by serial |
+| GET | `/api/history` | Recent power action attempts (success/failure/blocked) |
+
+## Protected drives & safety
+
+drivectl is a **test-focused drive power tool**, so likely boot/system drives
+are automatically classified as `protected` and hidden in a collapsed section
+with no power controls:
+
+- boot/system terms (`boot`, `os`, `system`, `ns204`, `b140i`) in the drive
+  name/model/description/location or its controller name;
+- a pair of exactly two small NVMe drives (≤ ¼ the largest drive) is treated
+  as a boot mirror;
+- manual role overrides (test/protected/unknown), stored **by serial number**.
+
+The backend re-classifies on every power request and refuses to act on
+protected or unknown drives unless the explicit override flags are sent
+(surfaced in the UI under *Settings*). Every attempt — including blocked
+ones — is logged to `<data_dir>/history.json` and shown in *Recent actions*.
+
 
 ## Troubleshooting
 

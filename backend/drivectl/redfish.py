@@ -137,35 +137,42 @@ class RedfishClient:
               for sid in storage_ids)
         )
 
-        drive_refs: list[tuple[str, str]] = []
+        drive_refs: list[tuple[str, str, str | None]] = []
         for sid, controller in zip(storage_ids, controllers):
+            ctrl_name = controller.get("Name")
             for drive in controller.get("Drives") or []:
                 odata_id = (drive or {}).get("@odata.id", "")
                 drive_id = odata_id.rstrip("/").split("/")[-1]
                 if drive_id:
-                    drive_refs.append((sid, drive_id))
+                    drive_refs.append((sid, drive_id, ctrl_name))
 
         details = await asyncio.gather(
-            *(self.get_drive(sid, did) for sid, did in drive_refs)
+            *(self.get_drive(sid, did, ctrl) for sid, did, ctrl in drive_refs)
         )
         return list(details)
 
-    async def get_drive(self, storage_id: str, drive_id: str) -> dict:
-        data = await self._request(
-            "GET", f"/redfish/v1/Systems/{SYSTEM_ID}/Storage/{storage_id}/Drives/{drive_id}"
-        )
+    async def get_drive(self, storage_id: str, drive_id: str,
+                        controller_name: str | None = None) -> dict:
+        uri = f"/redfish/v1/Systems/{SYSTEM_ID}/Storage/{storage_id}/Drives/{drive_id}"
+        data = await self._request("GET", uri)
         status = data.get("Status") or {}
+        part_location = (data.get("PhysicalLocation") or {}).get("PartLocation") or {}
         return {
             "storage_id": storage_id,
             "drive_id": drive_id,
+            "redfish_uri": uri,
             "name": data.get("Name"),
             "model": data.get("Model"),
             "serial_number": data.get("SerialNumber"),
             "capacity_bytes": data.get("CapacityBytes"),
             "media_type": data.get("MediaType"),
             "protocol": data.get("Protocol"),
+            "description": data.get("Description"),
+            "location": part_location.get("ServiceLabel"),
+            "controller_name": controller_name,
             "state": status.get("State"),
             "health": status.get("Health"),
+            "raw": data,
         }
 
     async def reset_drive(self, storage_id: str, drive_id: str, reset_value: str) -> None:
