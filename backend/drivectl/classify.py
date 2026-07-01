@@ -2,7 +2,10 @@
 
 Layered heuristics to keep boot/system drives out of the test pool:
 1. Manual override (keyed by serial number) always wins.
-2. Boot/system terms in name/model/description/location/controller name.
+2. Boot-specific terms (boot/ns204/b140i) in name/model/description/location/
+   controller name. Generic terms (os/system) only count in the drive's own
+   name/description: HPE calls the embedded NVMe controller "NVMe Storage
+   System", which would otherwise flag every attached data drive.
 3. Exactly two "small" NVMe drives (<= 1/4 of the largest drive) look like
    an HPE NS204-style boot mirror pair.
 4. Drives without a serial number cannot be tracked safely -> 'unknown'.
@@ -14,20 +17,32 @@ import re
 
 ROLES = ("test", "protected", "unknown")
 
-# Word-boundary match so e.g. model "MZWLJ3T8" doesn't false-positive on "os".
-BOOT_TERM_RE = re.compile(r"\b(boot|os|system|ns204|b140i)\b", re.IGNORECASE)
+# Strong terms are unambiguous boot indicators, safe to match anywhere.
+STRONG_TERM_RE = re.compile(r"\b(boot|ns204|b140i)\b", re.IGNORECASE)
+# Weak terms are generic words that appear in benign controller names
+# (e.g. "NVMe Storage System"), so they only apply to drive-level text.
+WEAK_TERM_RE = re.compile(r"\b(os|system)\b", re.IGNORECASE)
 
-# Fields inspected for boot/system terms, in priority order.
-_TERM_FIELDS = ("controller_name", "name", "model", "description", "location")
+# (field, allow_weak_terms): controller/model/location often contain generic
+# words like "System" that say nothing about the individual drive.
+_TERM_FIELDS = (
+    ("controller_name", False),
+    ("name", True),
+    ("model", False),
+    ("description", True),
+    ("location", False),
+)
 
 
 def _term_match(drive: dict) -> tuple[str, str] | None:
     """Return (field, matched_term) for the first boot-term hit, if any."""
-    for field in _TERM_FIELDS:
+    for field, allow_weak in _TERM_FIELDS:
         value = drive.get(field)
         if not value:
             continue
-        m = BOOT_TERM_RE.search(str(value))
+        m = STRONG_TERM_RE.search(str(value))
+        if not m and allow_weak:
+            m = WEAK_TERM_RE.search(str(value))
         if m:
             return field, m.group(0)
     return None
